@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>object_pose_interface_msgs</name>
+  <version>0.0.0</version>
+  <description>Object Pose Interface Messages</description>
+
+  <maintainer email="vvasilo@seas.upenn.edu">Vasileios Vasilopoulos</maintainer>
+
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>roscpp</depend>
+  <depend>message_generation</depend>
+  <depend>message_runtime</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+
+</package>

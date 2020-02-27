@@ -1,0 +1,3 @@
+src/libraries/__pycache__
+*.pyc
+.vscode

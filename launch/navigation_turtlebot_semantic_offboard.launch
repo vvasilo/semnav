@@ -1,0 +1,107 @@
+<!--
+MIT License (modified)
+
+Copyright (c) 2020 The Trustees of the University of Pennsylvania
+Authors:
+Vasileios Vasilopoulos <vvasilo@seas.upenn.edu>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this **file** (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
+
+<launch>
+    <!-- ARGUMENTS FOR MAIN NODE (point_navigation.py) -->
+    <!-- Define publisher topics -->
+    <arg name="pub_twist_topic"             default="/kobuki/mobile_base/commands/velocity"/>                   <!-- Topic for twist commands - CHECK YOUR PLATFORM -->
+    <arg name="pub_behaviorID_topic"        default="/minitaur/command/behaviorId"/>                            <!-- Topic for behavior ID commands - CHECK YOUR PLATFORM -->
+    <arg name="pub_behaviorMode_topic"      default="/minitaur/command/behaviorMode"/>                          <!-- Topic for behavior mode commands - CHECK YOUR PLATFORM -->
+
+    <!-- Define subscriber topics -->
+    <arg name="sub_robot_topic"             default="/pose_tracking/semslam/robot_odom"/>                       <!-- Robot odometry - CHECK YOUR STATE ESTIMATOR -->
+    <arg name="sub_laser_topic"             default="/sensor_integration/lidar_scan"/>                          <!-- LaserScan topic - CHECK YOUR SENSOR TOPIC OR DEPTHMAP TO LIDAR CONVERTER -->
+    <arg name="sub_semantic_topic"          default="/pose_tracking/semantic_map"/>                             <!-- Semantic map topic - CHECK YOUR POSE TRACKING PIPELINE -->
+
+    <!-- Define frame IDs -->
+    <arg name="world_frame_id"              default="map"/>                                                     <!-- World frame ID in tf - CHECK YOUR STATE ESTIMATOR -->
+    <arg name="laser_frame_id"              default="laser"/>                                                   <!-- LIDAR frame ID in tf - CHECK YOUR SENSOR TOPIC OR DEPTHMAP TO LIDAR CONVERTER -->
+
+    
+    <!-- Launch tracking file to start odometry, LIDAR and object tracking and disable teleop mode for Kobuki -->
+    <!-- <include file = "$(find semnav)/launch/tracking_turtlebot_semslam.launch">
+		<arg name="teleop"							    value="true"/>
+	</include> -->
+
+    <!-- Launch main node and assign appropriate parameters -->
+    <node name="navigation_node" pkg="semnav" type="navigation_semantic" ns="reactive_planner" output="screen">
+        <!-- ARGUMENT PARAMETERS -->
+        <param name="pub_twist_topic"                   value="$(arg pub_twist_topic)"/>
+        <param name="pub_behaviorID_topic"              value="$(arg pub_behaviorID_topic)"/>
+        <param name="pub_behaviorMode_topic"            value="$(arg pub_behaviorMode_topic)"/>
+        <param name="sub_laser_topic"                   value="$(arg sub_laser_topic)"/>
+        <param name="sub_robot_topic"                   value="$(arg sub_robot_topic)"/>
+	    <param name="sub_semantic_topic"                value="$(arg sub_semantic_topic)"/>
+        <param name="world_frame_id"                    value="$(arg world_frame_id)"/>
+        <param name="laser_frame_id"                    value="$(arg laser_frame_id)"/>
+
+        <!-- SEMANTIC PARAMETERS -->
+        <param name="target_object"                     value="cart"/>
+        <param name="target_object_length"              value="0.82"/>
+        <param name="target_object_width"               value="0.61"/>
+
+        <!-- NUMERICAL PARAMETERS -->
+        <!-- Platform-specific parameters -->
+		<param name="RobotRadius"						value="0.1"/>		<!-- Radius of the robot, i.e, distance from the camera to the center of the LIDAR (m) -->
+        <param name="ObstacleDilation"					value="0.2"/>		<!-- Desired obstacle dilation - for safety, it needs to be greater than or equal to the robot radius (m) -->
+        <param name="WalkHeight"                        value="0.0"/>       <!-- Nominal walking height to be used during walk (m) -->
+
+        <!-- LIDAR parameters -->
+        <param name="AllowableRange"                    value="3."/>        <!-- Maximum allowable LIDAR range (m) -->
+        <param name="CutoffRange"                       value="0.15"/>      <!-- Cutoff LIDAR range below which range is flipped to Inf (m) -->
+
+        <!-- Diffeomorphism parameters -->
+        <param name="RFunctionExponent"                 value="20"/>        <!-- R-function exponent -->
+        <param name="Epsilon"                           value="0.5"/>       <!-- Parameter tuning the distance away from the obstacle the R-function affects -->
+        <param name="VarEpsilon"                        value="0.5"/>       <!-- Parameter tuning the size of polygonal collars -->
+        <param name="Mu1"                               value="2.0"/>       <!-- Exponent for beta switches -->
+        <param name="Mu2"                               value="0.05"/>      <!-- Exponent for gamma switches -->
+        <param name="SemanticMapUpdateRate"             value="8.0"/>       <!-- Desired update rate for the semantic map in the navigation node (Hz) -->
+
+        <!-- Parameters for linear and angular commands -->
+        <param name="ForwardLinCmdLimit"                value="0.15"/>      <!-- Forward linear command limit -->
+        <param name="BackwardLinCmdLimit"               value="0."/>        <!-- Backward linear command limit -->
+        <param name="AngCmdLimit"                       value="0.7"/>       <!-- Angular command limit for Move and MoveTo -->
+        
+        <!-- Linear and angular gains -->
+        <param name="LinearGain"                      	value="0.4"/>       <!-- Linear gain-->
+        <param name="AngularGain"                     	value="0.4"/>       <!-- Angular gain-->
+
+        <!-- Goal and tolerance for successful placement -->
+		<param name="Goal_x"                         	value="6.513"/> 	<!-- Goal Position in x -->
+        <param name="Goal_y"                         	value="-0.029"/> 	<!-- Goal Position in y-->
+        <param name="Tolerance"                         value="0.1"/>       <!-- Tolerance for successful placement -->
+
+        <!-- Lowpass filtering parameters -->
+        <param name="LowpassCutoff"                     value="4."/>        <!-- Cutoff frequency for lowpass filter (Hz) -->
+        <param name="LowpassSampling"                   value="25."/>       <!-- Sampling frequency (Hz) -->
+        <param name="LowpassOrder"                      value="6"/>         <!-- Order of the lowpass filter -->
+        <param name="LowpassSamples"                    value="10"/>        <!-- Number of samples to use for filtering (moving window) -->
+
+        <!-- Debug parameter -->
+        <param name="DebugFlag"                         value="false"/>     <!-- True if you want access to debug functionality -->
+    </node>
+</launch>
