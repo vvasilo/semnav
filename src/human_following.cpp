@@ -267,7 +267,7 @@ class HumanFollowingNode {
 					// Extract points of the polygon
 					std::vector<point> polygon_in_points;
 					for (size_t j = 0; j < semantic_map_data->objects[i].polygon2d.polygon.points.size(); j++) {
-						polygon_in_points.push_back({semantic_map_data->objects[i].polygon2d.polygon.points[j].x, semantic_map_data->objects[i].polygon2d.polygon.points[j].y});
+						polygon_in_points.push_back(point(semantic_map_data->objects[i].polygon2d.polygon.points[j].x, semantic_map_data->objects[i].polygon2d.polygon.points[j].y));
 					}
 					polygon polygon_in = BoostPointToBoostPoly(polygon_in_points);
 

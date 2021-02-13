@@ -55,21 +55,22 @@ void completeLIDAR2D(LIDARClass* LIDAR) {
      * Input: 
      *  1) LIDAR: Incomplete LIDAR object
      */
-    if ((LIDAR->MaxAngle-LIDAR->MinAngle) < 2*M_PI) {
+    if ((LIDAR->MaxAngle-LIDAR->MinAngle) < 6.28) {
         std::vector<double> tempR = LIDAR->RangeMeasurements;
         std::vector<double> tempAngle = LIDAR->Angle;
         double tempResolution = LIDAR->Resolution;
 
         // Updated LIDAR model
-        LIDAR->MaxAngle = LIDAR->MinAngle + 2*M_PI;
-        LIDAR->NumSample = uint16_t(round((2*M_PI/tempResolution)+1));
+        LIDAR->MinAngle = -M_PI;
+        LIDAR->MaxAngle = LIDAR->MinAngle + 2.0*M_PI;
+        LIDAR->NumSample = uint16_t(round((2.0*M_PI/tempResolution)+1));
         LIDAR->Resolution = (LIDAR->MaxAngle-LIDAR->MinAngle)/(LIDAR->NumSample-1);
         LIDAR->Angle = linspace(LIDAR->MinAngle, LIDAR->MaxAngle, LIDAR->NumSample);
 
         // Completed Range Data
         std::vector<double> R(LIDAR->NumSample, LIDAR->Range);
         for (size_t i = 0 ; i < tempAngle.size() ; i++) {
-            size_t index = size_t(floor((fmod(tempAngle[i]-LIDAR->MinAngle+LIDAR->Resolution/2,2*M_PI))/LIDAR->Resolution));
+            size_t index = size_t(roundf((fmod(tempAngle[i]-LIDAR->MinAngle+LIDAR->Resolution/2.0,2.0*M_PI))/LIDAR->Resolution));
             R[index] = tempR[i];
         }
         LIDAR->RangeMeasurements.assign(R.begin(), R.end());
@@ -94,7 +95,7 @@ void constructLIDAR2D(const sensor_msgs::LaserScan::ConstPtr& DataLIDAR, double 
     
     // LIDAR operations
     double Range = AllowableRange;
-    double Infinity = AllowableRange+10.;
+    double Infinity = AllowableRange;
     double MinAngle = double(DataLIDAR->angle_min);
     double MaxAngle = double(DataLIDAR->angle_max);
     double Resolution = double(DataLIDAR->angle_increment);
@@ -105,7 +106,7 @@ void constructLIDAR2D(const sensor_msgs::LaserScan::ConstPtr& DataLIDAR, double 
 
     for (size_t i = 0; i < RangeMeasurements.size() ; i++) {
         // Project on the robot plane
-        RangeMeasurements[i] = RangeMeasurements[i] * cos(Pitch);
+        RangeMeasurements[i] = std::min(RangeMeasurements[i]*cos(Pitch), AllowableRange);
 
         // Reject NaNs
         if (isnan(RangeMeasurements[i])) {
@@ -208,24 +209,23 @@ void readLIDAR2D(point RobotPosition, double RobotOrientation, std::vector<polyg
     virtualLIDAR->MaxAngle = MaxAngle;
     virtualLIDAR->Resolution = Resolution;
 
-    // Translation in the physical space to bring the points to the origin
-    bg::strategy::transform::translate_transformer<double, 2, 2> translate(-RobotPosition.get<0>(), -RobotPosition.get<1>());
-
-    // Rotation matrix from the global frame to the local sensor frame (rotate by -RobotOrientation) - Boost rotates CW
-    bg::strategy::transform::rotate_transformer<bg::radian, double, 2, 2> rotate(RobotOrientation);
+    // Find transform
+    bg::strategy::transform::matrix_transformer<double, 2, 2> frame_transform(cos(RobotOrientation), -sin(RobotOrientation), RobotPosition.get<0>(),
+                                                                              sin(RobotOrientation), cos(RobotOrientation),  RobotPosition.get<1>(),
+                                                                              0.0,                   0.0,                    1.0);
+    bg::strategy::transform::inverse_transformer<double, 2, 2> frame_transform_inv(frame_transform);
 
     // Determine distance to the workspace boundary and obstacles
     for (size_t co = 0 ; co < Obstacles.size() ; co++) {
         // Obstacle in the local sensor frame
-        std::vector<point> obstacle_points = Obstacles[co].outer();
+        std::vector<point> obstacle_points = BoostPolyToBoostPoint(Obstacles[co]);
 
         // Bring the obstacle to the sensor frame
         for (size_t i = 0; i < obstacle_points.size(); i++) {
-            point output_1, output_2;
-            bg::transform(obstacle_points[i], output_1, translate);
-            bg::transform(output_1, output_2, rotate);
-            obstacle_points[i].set<0>(output_2.get<0>());
-            obstacle_points[i].set<1>(output_2.get<1>());
+            point output_1;
+            bg::transform(obstacle_points[i], output_1, frame_transform_inv);
+            obstacle_points[i].set<0>(output_1.get<0>());
+            obstacle_points[i].set<1>(output_1.get<1>());
         }
 
         // Compute distance to every obstacle edge
@@ -251,7 +251,7 @@ void readLIDAR2D(point RobotPosition, double RobotOrientation, std::vector<polyg
             // Compute LIDAR range if the obstacle segment is in the sensing region
             if (flagDist && flagAngle) {
                 // Closest LIDAR ray index
-                size_t I = size_t(round((std::max(std::min(ac,an),virtualLIDAR->MinAngle)-virtualLIDAR->MinAngle)/virtualLIDAR->Resolution));
+                size_t I = size_t(round((std::max(ac,virtualLIDAR->MinAngle)-virtualLIDAR->MinAngle)/virtualLIDAR->Resolution));
                 I = (I%virtualLIDAR->NumSample);
 
                 // Compute the intersection of the LIDAR ray with the sensor footprint
@@ -285,7 +285,8 @@ void readLIDAR2D(point RobotPosition, double RobotOrientation, std::vector<polyg
                     }
                 }
 
-                J = (I-1)%virtualLIDAR->NumSample;
+
+                J = (static_cast<int>(virtualLIDAR->NumSample) + (static_cast<int>(I-1))%(static_cast<int>(virtualLIDAR->NumSample)))%(static_cast<int>(virtualLIDAR->NumSample));
                 flagValid = true;
                 while (flagValid && (J != I)) {
                     point vtemp(cos(virtualLIDAR->Angle[J]), sin(virtualLIDAR->Angle[J]));
@@ -295,7 +296,7 @@ void readLIDAR2D(point RobotPosition, double RobotOrientation, std::vector<polyg
                         point xtemp(w*vc.get<0>()+(1-w)*vn.get<0>(), w*vc.get<1>()+(1-w)*vn.get<1>());
                         if (bg::dot_product(xtemp,vtemp) >= 0.0) {
                             virtualLIDAR->RangeMeasurements[J] = std::min(virtualLIDAR->RangeMeasurements[J], bg::distance(xtemp,origin));
-                            J = ((J-1)%virtualLIDAR->NumSample);
+                            J = (static_cast<int>(virtualLIDAR->NumSample) + (static_cast<int>(J-1))%(static_cast<int>(virtualLIDAR->NumSample)))%(static_cast<int>(virtualLIDAR->NumSample));
                         } else {
                             flagValid = false;
                         }
@@ -329,28 +330,23 @@ void translateLIDAR2D(point RobotPosition, double RobotOrientation, point RobotP
     point origin(0.0, 0.0);
 
     // Account for the robot radius
-    std::transform(LIDAR->RangeMeasurements.begin(), LIDAR->RangeMeasurements.end(), LIDAR->RangeMeasurements.begin(), std::bind2nd(std::minus<double>(), RobotRadius));
+    for (auto& element: LIDAR->RangeMeasurements) element = element-RobotRadius;
     
     // Find obstacle points
     std::vector<point> obstacle_points = obstaclePointsLIDAR2D(RobotPosition, RobotOrientation, LIDAR);
 
-    // Translation in the physical space to bring the points to the origin
-    bg::strategy::transform::translate_transformer<double, 2, 2> translate(-RobotPosition.get<0>(), -RobotPosition.get<1>());
-
-    // Rotation matrix from the global frame to the local sensor frame (rotate by -RobotOrientation) - Boost rotates CW
-    bg::strategy::transform::rotate_transformer<bg::radian, double, 2, 2> rotate(RobotOrientation);
-
-    // Rotation matrix from the local sensor frame to the global frame in the transformed space - Boost rotates CW
-    bg::strategy::transform::rotate_transformer<bg::radian, double, 2, 2> rotate_model(-RobotOrientationTransformed);
+    // Find transform
+    bg::strategy::transform::matrix_transformer<double, 2, 2> frame_transform(cos(RobotOrientationTransformed), -sin(RobotOrientationTransformed), RobotPositionTransformed.get<0>(),
+                                                                              sin(RobotOrientationTransformed), cos(RobotOrientationTransformed),  RobotPositionTransformed.get<1>(),
+                                                                              0.0,                   0.0,                    1.0);
+    bg::strategy::transform::inverse_transformer<double, 2, 2> frame_transform_inv(frame_transform);
 
     // Apply rotations and translations to find the equivalent distance
     std::vector<double> R(LIDAR->RangeMeasurements.size(), LIDAR->Range);
     for (size_t i = 0 ; i < obstacle_points.size() ; i++) {
-        point output_1, output_2, output_3;
-        bg::transform(obstacle_points[i], output_1, translate);
-        bg::transform(output_1, output_2, rotate);
-        bg::transform(output_2, output_3, rotate_model);
-        R[i] = bg::distance(output_3, origin);
+        point output_1;
+        bg::transform(obstacle_points[i], output_1, frame_transform_inv);
+        R[i] = std::min(bg::distance(output_1, origin),LIDAR->Range);
     }
 
     // Update LIDAR object
@@ -459,7 +455,7 @@ polygon localworkspaceLIDAR2D(point RobotPosition, double RobotOrientation, doub
 
         // Update local workspace
         if (bg::is_valid(LW) && bg::is_valid(LocalFootprint)) {
-            std::deque<polygon> intersection_output;
+            multi_polygon intersection_output;
             bg::intersection(LW, LocalFootprint, intersection_output);
             polygon LW_out;
             if (intersection_output.empty()) {
@@ -542,7 +538,7 @@ polygon localfreespaceLIDAR2D(point RobotPosition, double RobotOrientation, doub
 
         // Update local workspace
         if (bg::is_valid(LF) && bg::is_valid(LocalFootprint)) {
-            std::deque<polygon> intersection_output;
+            multi_polygon intersection_output;
             bg::intersection(LF, LocalFootprint, intersection_output);
             polygon LF_out;
             if (intersection_output.empty()) {
@@ -735,7 +731,7 @@ void diffeoTreeTriangulation(std::vector<std::vector<double>> PolygonVertices, D
     // Check if the polygon intersects the workspace boundary
     if (bg::intersects(PolygonIn, workspaceLine)) {
         // Compute the intersection with the workspace
-        std::deque<polygon> polygon_to_use;
+        multi_polygon polygon_to_use;
         bg::intersection(PolygonIn, workspacePolygon, polygon_to_use);
 
         // Find the vertices of the polygon
@@ -822,8 +818,8 @@ void diffeoTreeTriangulation(std::vector<std::vector<double>> PolygonVertices, D
         polygon intersect_2 = cvxpolyxhplane(intersect_1, last_triangle_center, tree->back().get_r_center_n().back());
 
         // Compute the intersection with the workspace
-        std::deque<polygon> output_1;
-        std::deque<polygon> output_2;
+        multi_polygon output_1;
+        multi_polygon output_2;
         polygon final_polygon;
         bg::intersection(intersect_2, workspacePolygon, output_1);
         bg::union_(output_1[0], BoostPointToBoostPoly({last_triangle_center, last_triangle_vertices[1], last_triangle_vertices[2], last_triangle_vertices[0], last_triangle_center}), output_2);
@@ -868,7 +864,7 @@ void diffeoTreeTriangulation(std::vector<std::vector<double>> PolygonVertices, D
         polygon last_triangle_polygon_dilated = last_triangle_multipolygon_dilated.front();
 
         // Compute the intersection with the workspace
-        std::deque<polygon> output_1;
+        multi_polygon output_1;
         polygon final_polygon;
         bg::intersection(last_triangle_polygon_dilated, workspacePolygon, output_1);
         bg::simplify(output_1[0], final_polygon, 0.02);
@@ -934,7 +930,7 @@ void diffeoTreeTriangulation(std::vector<std::vector<double>> PolygonVertices, D
             } else {
                 std::vector<point> triangle_to_test_vertices = (*tree)[j].get_vertices();
                 polygon triangle_to_test = BoostPointToBoostPoly({triangle_to_test_vertices[0], triangle_to_test_vertices[1], triangle_to_test_vertices[2], triangle_to_test_vertices[0]});
-                std::deque<polygon> difference_output;
+                multi_polygon difference_output;
                 bg::difference(candidate_polygon, triangle_to_test, difference_output);
 
                 // If the difference operation created a multipolygon, keep only the polygon that contains the barycenter of the extended triangle
@@ -993,7 +989,7 @@ void diffeoTreeTriangulation(std::vector<std::vector<double>> PolygonVertices, D
 
         // Generate the outer polygonal collar
         polygon final_polygon = BoostPointToBoostPoly(final_polygon_vertices);
-        std::deque<polygon> output;
+        multi_polygon output;
         bg::intersection(final_polygon, workspacePolygon, output);
         std::vector<point> output_vertices = BoostPolyToBoostPoint(output[0]);
         output_vertices.pop_back();
@@ -1043,7 +1039,7 @@ void diffeoTreeConvex(std::vector<std::vector<double>> PolygonVertices, DiffeoPa
     // Check if the polygon intersects the workspace boundary
     if (bg::intersects(PolygonIn, workspaceLine)) {
         // Compute the intersection with the workspace
-        std::deque<polygon> polygon_to_use;
+        multi_polygon polygon_to_use;
         bg::intersection(PolygonIn, workspacePolygon, polygon_to_use);
 
         // Find the vertices of the polygon
@@ -1058,14 +1054,15 @@ void diffeoTreeConvex(std::vector<std::vector<double>> PolygonVertices, DiffeoPa
         for (size_t i = 0; i < last_polygon_vertices.size(); i++) {
             dist_vector[i] = bg::distance(last_polygon_vertices[i], workspaceLine);
         }
-        size_t min_dist_element = std::distance(dist_vector.begin(), std::min_element(dist_vector.begin(), dist_vector.end()));
+        int min_dist_element = std::distance(dist_vector.begin(), std::min_element(dist_vector.begin(), dist_vector.end()));
         std::vector<point> new_root_vertices;
         if (dist_vector[(min_dist_element+1)%last_polygon_vertices.size()] >= dist_vector[(min_dist_element-1)%last_polygon_vertices.size()]) {
-            for (size_t j = 0; j < last_polygon_vertices.size(); j++) {
-                new_root_vertices.push_back(point(last_polygon_vertices[(min_dist_element-1+j)%last_polygon_vertices.size()].get<0>(), last_polygon_vertices[(min_dist_element-1+j)%last_polygon_vertices.size()].get<1>()));
+            int last_polygon_vertices_size = static_cast<int>(last_polygon_vertices.size());
+            for (int j = 0; j < last_polygon_vertices.size(); j++) {
+                new_root_vertices.push_back(point(last_polygon_vertices[(last_polygon_vertices_size+((min_dist_element-1+j)%last_polygon_vertices_size))%last_polygon_vertices_size].get<0>(), last_polygon_vertices[(last_polygon_vertices_size+((min_dist_element-1+j)%last_polygon_vertices_size))%last_polygon_vertices_size].get<1>()));
             }
         } else {
-            for (size_t j = 0; j < last_polygon_vertices.size(); j++) {
+            for (int j = 0; j < last_polygon_vertices.size(); j++) {
                 new_root_vertices.push_back(point(last_polygon_vertices[(min_dist_element+j)%last_polygon_vertices.size()].get<0>(), last_polygon_vertices[(min_dist_element+j)%last_polygon_vertices.size()].get<1>()));
             }
         }
@@ -1111,7 +1108,7 @@ void diffeoTreeConvex(std::vector<std::vector<double>> PolygonVertices, DiffeoPa
         polygon intersect_2 = cvxpolyxhplane(intersect_1, last_polygon_center, tree->back().get_r_center_n().back());
 
         // Compute the intersection with the workspace
-        std::deque<polygon> output_1, output_2;
+        multi_polygon output_1, output_2;
         polygon final_polygon;
         bg::intersection(intersect_2, workspacePolygon, output_1);
         bg::union_(output_1[0], BoostPointToBoostPoly({last_polygon_center, last_polygon_vertices[1], last_polygon_vertices[2], last_polygon_vertices[0], last_polygon_center}), output_2);
@@ -1182,7 +1179,7 @@ void diffeoTreeConvex(std::vector<std::vector<double>> PolygonVertices, DiffeoPa
         polygon last_polygon_dilated = last_polygon_multipolygon_dilated.front();
 
         // Compute the intersection with the workspace
-        std::deque<polygon> output_1;
+        multi_polygon output_1;
         polygon final_polygon;
         bg::intersection(last_polygon_dilated, workspacePolygon, output_1);
         bg::simplify(output_1[0], final_polygon, 0.02);
@@ -1265,7 +1262,7 @@ void diffeoTreeConvex(std::vector<std::vector<double>> PolygonVertices, DiffeoPa
                 bg::union_(output_union, BoostPointToBoostPoly(polygon_to_test_vertices), temp_result);
                 output_union = temp_result;
             }
-            std::deque<polygon> output_intersection;
+            multi_polygon output_intersection;
             bg::intersection(polygon_used_multipolygon_dilated.front(), output_union, output_intersection);
             if (output_intersection.size() > 1) {
                 varepsilon_used = 0.5*varepsilon_used;
@@ -1285,7 +1282,7 @@ void diffeoTreeConvex(std::vector<std::vector<double>> PolygonVertices, DiffeoPa
             } else {
                 std::vector<point> polygon_to_test_vertices = (*tree)[j].get_vertices();
                 polygon_to_test_vertices.push_back(polygon_to_test_vertices[0]);
-                std::deque<polygon> difference_output;
+                multi_polygon difference_output;
                 bg::difference(candidate_polygon, BoostPointToBoostPoly(polygon_to_test_vertices), difference_output);
 
                 // If the difference operation created a multipolygon, keep only the polygon that contains the barycenter of the extended triangle
@@ -1344,7 +1341,7 @@ void diffeoTreeConvex(std::vector<std::vector<double>> PolygonVertices, DiffeoPa
 
         // Generate the outer polygonal collar
         polygon final_polygon = BoostPointToBoostPoly(final_polygon_vertices);
-        std::deque<polygon> output;
+        multi_polygon output;
         bg::intersection(final_polygon, workspacePolygon, output);
         std::vector<point> output_vertices = BoostPolyToBoostPoint(output[0]);
         output_vertices.pop_back();
