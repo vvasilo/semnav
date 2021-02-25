@@ -759,7 +759,27 @@ void polyconvexdecomposition(std::vector<std::vector<double>> xy, std::vector<st
             public:
                 boundary_distance_comparator(line workspaceLine) : workspaceLine_(workspaceLine) {}
                 bool operator() (const std::vector<std::vector<double>> a, const std::vector<std::vector<double>> b) {
-                    return (bg::distance(BoostPointToBoostPoly(StdToBoostPoint(a)), workspaceLine_) < bg::distance(BoostPointToBoostPoly(StdToBoostPoint(b)), workspaceLine_));
+                    double size_a = static_cast<double>(a.size());
+                    double size_b = static_cast<double>(b.size());
+                    double sum_a = 0.0;
+                    double sum_b = 0.0;
+                    double boundary_a = 0.0;
+                    double boundary_b = 0.0;
+                    for (size_t i = 0; i < a.size(); i++) {
+                        sum_a = sum_a + bg::distance(point(a[i][0],a[i][1]), workspaceLine_);
+                        if (bg::distance(point(a[i][0],a[i][1]), workspaceLine_) < 1e-2) {
+                            boundary_a = boundary_a + 1.0;
+                        }
+                    }
+                    for (size_t i = 0; i < b.size(); i++) {
+                        sum_b = sum_b + bg::distance(point(b[i][0],b[i][1]), workspaceLine_);
+                        if (bg::distance(point(b[i][0],b[i][1]), workspaceLine_) < 1e-2) {
+                            boundary_b = boundary_b + 1.0;
+                        }
+                    }
+                    double normalized_a = sum_a/size_a;
+                    double normalized_b = sum_b/size_b;
+                    return (boundary_a/normalized_a > boundary_b/normalized_b);
                 }
         };
 

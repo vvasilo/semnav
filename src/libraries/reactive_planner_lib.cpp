@@ -1056,9 +1056,9 @@ void diffeoTreeConvex(std::vector<std::vector<double>> PolygonVertices, DiffeoPa
         }
         int min_dist_element = std::distance(dist_vector.begin(), std::min_element(dist_vector.begin(), dist_vector.end()));
         std::vector<point> new_root_vertices;
-        if (dist_vector[(min_dist_element+1)%last_polygon_vertices.size()] >= dist_vector[(min_dist_element-1)%last_polygon_vertices.size()]) {
-            int last_polygon_vertices_size = static_cast<int>(last_polygon_vertices.size());
-            for (int j = 0; j < last_polygon_vertices.size(); j++) {
+        int last_polygon_vertices_size = static_cast<int>(last_polygon_vertices.size());
+        if (dist_vector[(min_dist_element+1)%last_polygon_vertices_size] >= dist_vector[(last_polygon_vertices_size+((min_dist_element-1)%last_polygon_vertices_size))%last_polygon_vertices_size]) {
+            for (int j = 0; j < last_polygon_vertices_size; j++) {
                 new_root_vertices.push_back(point(last_polygon_vertices[(last_polygon_vertices_size+((min_dist_element-1+j)%last_polygon_vertices_size))%last_polygon_vertices_size].get<0>(), last_polygon_vertices[(last_polygon_vertices_size+((min_dist_element-1+j)%last_polygon_vertices_size))%last_polygon_vertices_size].get<1>()));
             }
         } else {
@@ -1152,7 +1152,7 @@ void diffeoTreeConvex(std::vector<std::vector<double>> PolygonVertices, DiffeoPa
             sum_x = sum_x + last_polygon_vertices[i].get<0>();
             sum_y = sum_y + last_polygon_vertices[i].get<1>();
         }
-	double polygon_vertex_size = (double)last_polygon_vertices.size();
+	    double polygon_vertex_size = (double)last_polygon_vertices.size();
         tree->back().set_center(point(sum_x/polygon_vertex_size, sum_y/polygon_vertex_size));
 
         // Find the radius of the root
