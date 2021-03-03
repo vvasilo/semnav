@@ -342,16 +342,29 @@ void translateLIDAR2D(point RobotPosition, double RobotOrientation, point RobotP
     bg::strategy::transform::inverse_transformer<double, 2, 2> frame_transform_inv(frame_transform);
 
     // Apply rotations and translations to find the equivalent distance
-    std::vector<double> R(LIDAR->RangeMeasurements.size(), LIDAR->Range);
+    std::vector<double> ranges(obstacle_points.size(), LIDAR->Range);
+    std::vector<double> bearings(obstacle_points.size());
     for (size_t i = 0 ; i < obstacle_points.size() ; i++) {
-        point output_1;
+        point output_1, output_2;
         bg::transform(obstacle_points[i], output_1, frame_transform_inv);
-        R[i] = std::min(bg::distance(output_1, origin),LIDAR->Range);
+        ranges[i] = std::min(bg::distance(output_1, origin),LIDAR->Range);
+        bearings[i] = atan2(output_1.get<1>(), output_1.get<0>());
+    }
+
+    // Correspond new ranges to the old angles to keep LIDAR properties the same
+    std::vector<double> R(LIDAR->Angle.size());
+    for (size_t i = 0 ; i < LIDAR->Angle.size() ; i++) {
+        std::vector<double> inner_products(bearings.size());
+        for (size_t j = 0 ; j < bearings.size() ; j++) {
+            inner_products[j] = cos(bearings[j])*cos(LIDAR->Angle[i]) + sin(bearings[j])*sin(LIDAR->Angle[i]);
+        }
+        size_t des_index = std::distance(inner_products.begin(), std::max_element(inner_products.begin(), inner_products.end()));
+        R[i] = std::min(ranges[des_index], LIDAR->Range);
     }
 
     // Update LIDAR object
     LIDAR->RangeMeasurements = R;
-
+    
     return;
 }
 
@@ -1073,7 +1086,7 @@ void diffeoTreeConvex(std::vector<std::vector<double>> PolygonVertices, DiffeoPa
 
         // Find the center of transformation
         point median_point(0.5*(last_polygon_vertices[1].get<0>()+last_polygon_vertices[0].get<0>()), 0.5*(last_polygon_vertices[1].get<1>()+last_polygon_vertices[0].get<1>()));
-        point median_ray(median_point.get<0>()-last_polygon_vertices[2].get<0>(), median_point.get<1>()-last_polygon_vertices[2].get<1>());
+        point median_ray(-(last_polygon_adj_edge[0].get<1>()-last_polygon_adj_edge[1].get<1>()), last_polygon_adj_edge[0].get<0>()-last_polygon_adj_edge[1].get<0>());
         median_ray.set<0>(median_ray.get<0>()/bg::distance(median_ray,origin));
         median_ray.set<1>(median_ray.get<1>()/bg::distance(median_ray,origin));
         point last_polygon_center(median_point.get<0>()+0.1*median_ray.get<0>(), median_point.get<1>()+0.1*median_ray.get<1>());

@@ -184,6 +184,26 @@ line BoostPointToBoostLine(std::vector<point> input) {
 }
 
 
+double angle_transformation(double input_angle) {
+    /**
+     * Function that takes as input an angle and converts it to an angle between -M_PI and M_PI
+     * 
+     * Input:
+     *  1) input: Vector of points in Boost format
+     * 
+     * Output:
+     *  2) output: Line in Boost format
+     */
+    double OutputAngle = fmodf((input_angle + M_PI),2.0*M_PI);
+    if (OutputAngle < 0.0) {
+        OutputAngle = OutputAngle + 2.0*M_PI;
+    }
+    double output = OutputAngle - M_PI;
+
+    return output;
+}
+
+
 polygon cvxpolyxhplane(polygon xy, point m, point n) {
     /** 
      * Function that computes the the intersection of a polygon, with vertex coordinates xy, and a halfplane, defined by a boundary point m and the inward normal n.
@@ -859,58 +879,6 @@ void polyconvexdecomposition(std::vector<std::vector<double>> xy, std::vector<st
                     new_polygon_vertices.push_back(point(polygon_list[i][(adj_edge_index+j)%polygon_list[i].size()][0], polygon_list[i][(adj_edge_index+j)%polygon_list[i].size()][1]));
                 }
                 new_polygon.set_vertices(new_polygon_vertices);
-                
-                // As a final preprocessing step, check whether the edges before and after the adj_edge are parallel with adj_edge
-                // If that's the case, cut the triangle corresponding to that edge as an extra polygon
-                double dist_last_first = bg::distance(new_polygon_vertices[0], new_polygon_vertices.back());
-                double dist_second_third = bg::distance(new_polygon_vertices[2], new_polygon_vertices[1]);
-                double dist_adj_edge = bg::distance(new_polygon_vertices[1], new_polygon_vertices[0]);
-                std::vector<double> tangent_before = {(new_polygon_vertices[0].get<0>()-new_polygon_vertices.back().get<0>())/dist_last_first, 
-                                                      (new_polygon_vertices[0].get<1>()-new_polygon_vertices.back().get<1>())/dist_last_first};
-                std::vector<double> tangent_after = {(new_polygon_vertices[2].get<0>()-new_polygon_vertices[1].get<0>())/dist_second_third, 
-                                                     (new_polygon_vertices[2].get<1>()-new_polygon_vertices[1].get<1>())/dist_second_third};
-                std::vector<double> tangent_adj_edge = {(new_polygon_vertices[1].get<0>()-new_polygon_vertices[0].get<0>())/dist_adj_edge, 
-                                                        (new_polygon_vertices[1].get<1>()-new_polygon_vertices[0].get<1>())/dist_adj_edge};
-                std::vector<double> normal_adj_edge = {-tangent_adj_edge[1], tangent_adj_edge[0]};
-                if (abs(tangent_before[0]*normal_adj_edge[0]+tangent_before[1]*normal_adj_edge[1]) < 0.001) {
-                    // Add triangle
-                    PolygonClass polygon_before;
-                    polygon_before.set_predecessor(new_polygon.get_index());
-                    polygon_before.set_depth(new_polygon.get_depth()+1);
-                    polygon_before.set_index(++tree_index);
-                    std::vector<point> polygon_before_adj_edge = {new_polygon_vertices[0], new_polygon_vertices[new_polygon_vertices.size()-2]};
-                    std::vector<point> polygon_before_vertices = {new_polygon_vertices[0], new_polygon_vertices[new_polygon_vertices.size()-2], new_polygon_vertices[new_polygon_vertices.size()-1]};
-                    polygon_before.set_adj_edge(polygon_before_adj_edge);
-                    polygon_before.set_vertices(polygon_before_vertices);
-
-                    // Delete the last vertex from the original polygon
-                    new_polygon_vertices.pop_back();
-                    new_polygon.set_vertices(new_polygon_vertices);
-
-                    // Add the new triangle to the tree
-                    tree->push_back(polygon_before);
-                    stack.push_back(polygon_before);
-                }
-
-                if (abs(tangent_after[0]*normal_adj_edge[0]+tangent_after[1]*normal_adj_edge[1]) < 0.001) {
-                    // Add triangle
-                    PolygonClass polygon_after;
-                    polygon_after.set_predecessor(new_polygon.get_index());
-                    polygon_after.set_depth(new_polygon.get_depth()+1);
-                    polygon_after.set_index(++tree_index);
-                    std::vector<point> polygon_after_adj_edge = {new_polygon_vertices[3], new_polygon_vertices[1]};
-                    std::vector<point> polygon_after_vertices = {new_polygon_vertices[3], new_polygon_vertices[1], new_polygon_vertices[2]};
-                    polygon_after.set_adj_edge(polygon_after_adj_edge);
-                    polygon_after.set_vertices(polygon_after_vertices);
-
-                    // Delete the second vertex from the original polygon
-                    new_polygon_vertices.erase(new_polygon_vertices.begin()+2);
-                    new_polygon.set_vertices(new_polygon_vertices);
-
-                    // Add the new triangle to the tree and stack
-                    tree->push_back(polygon_after);
-                    stack.push_back(polygon_after);
-                }
 
                 // Delete the child from the input stack
                 polygon_list.erase(polygon_list.begin()+i);
