@@ -614,8 +614,14 @@ def polyconvexdecomposition(xy,workspace,touching_boundary):
     # Find polygon vertices
     polygon_vertices = np.vstack((polygon_in.exterior.coords.xy[0][0:-1], polygon_in.exterior.coords.xy[1][0:-1])).transpose()
 
-    # Find convex decomposition
+    # Find convex decomposition and delete problematic areas
     polygons = np.array([np.array(xi) for xi in polycvxdecomp(polygon_vertices.tolist())])
+    idx = 0
+    while idx <= len(polygons)-1:
+        if Polygon(polygons[idx]).area < 0.01:
+            polygons = np.delete(polygons, idx, axis=0)
+        else:
+            idx = idx+1
 
     # Sorting argument for polygons - Area if not touching boundary, Min distance to boundary if touching boundary
     sorting = np.zeros(polygons.shape[0])
